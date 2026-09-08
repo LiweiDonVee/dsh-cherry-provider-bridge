@@ -2,6 +2,8 @@
 
 Reuse a selected Cherry Studio provider in DeepSeek Harness, including its enabled model catalog, without relying on provider `GET /models` discovery.
 
+Built to interoperate with [Cherry Studio by CherryHQ](https://github.com/CherryHQ/cherry-studio): Cherry owns the source provider/model configuration this bridge consumes. This is an independent community adapter, **not an official Cherry Studio plugin or a fork of Cherry Studio**. See [relationship, provenance and license boundaries](NOTICE.md).
+
 The bridge reads Cherry's SQLite database read-only and periodically synchronizes the credential and manual model route through DSH services. It adds a missing OpenAI `/v1` suffix once and preserves model metadata and compatible reasoning options.
 
 ## Requirements
