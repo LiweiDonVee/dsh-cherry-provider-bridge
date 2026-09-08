@@ -1,0 +1,8 @@
+- insert:
+    - id: cherry-provider-bridge
+      name: dsh-cherry-provider-bridge
+      config:
+        providerName: My Provider
+        routeId: cherry
+        credentialRef: CHERRY_API_KEY
+        syncIntervalMs: 5000
