@@ -70,10 +70,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const services: BridgeServices = {
     resolveCredential: async () => (await ctx.credentials.resolve(ref))?.value,
     setCredential: async (_credential, value) => ctx.credentials.set(ref, value),
-    getPiAiSettings: () => ctx.settings.get(namespace),
-    mutatePiAiSettings: async operations => ctx.settings.mutate(
+    getPiAiSettings: () => ctx.settings.describe().find(entry => entry.ns === namespace),
+    mutatePiAiSettings: async (operations, expectedRevision) => ctx.settings.mutate(
       namespace,
       operations,
+      expectedRevision,
     ),
   }
   let stopped = false
@@ -89,7 +90,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       const changed = resultSummary(result)
       if (changed !== undefined) ctx.logger.info('Cherry provider bridge synchronized %s', changed)
       if (result.settingsPending && !pendingReported) {
-        ctx.logger.debug('Cherry provider bridge is waiting for the llm-pi-ai settings namespace')
+        ctx.logger.debug('Cherry provider bridge is waiting for the llm-pi-ai Profile entry')
         pendingReported = true
       }
       if (!result.settingsPending) pendingReported = false

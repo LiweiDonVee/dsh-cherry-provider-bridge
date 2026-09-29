@@ -5,9 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import test from 'node:test'
-import { Context } from '@deepseek-ai/cordis'
-import SettingsProvider from '@deepseek-ai/dsh-settings'
-import z from '@deepseek-ai/schemastery'
+import type { Context } from '@deepseek-ai/cordis'
 import {
   readCherryProvider,
   synchronizeCherryProvider,
@@ -284,7 +282,7 @@ test('It writes the credential and a manual DSH model route', async () => {
   const services: BridgeServices = {
     resolveCredential: async () => storedCredential,
     setCredential: async (_ref, value) => { storedCredential = value },
-    getPiAiSettings: () => ({ providers: {} }),
+    getPiAiSettings: () => ({ value: { providers: {} }, revision: 0 }),
     mutatePiAiSettings: async ops => { mutations = [...ops] },
   }
 
@@ -320,15 +318,18 @@ test('It skips writes when Cherry and DSH are already synchronized', async () =>
     resolveCredential: async () => snapshot.apiKey,
     setCredential: async () => { credentialWrites += 1 },
     getPiAiSettings: () => ({
-      providers: {
-        muskapi: {
-          displayName: snapshot.displayName,
-          apiKeyEnv: 'MUSKAPI_API_KEY',
-          api: snapshot.api,
-          baseURL: snapshot.baseURL,
-          models: snapshot.models,
+      value: {
+        providers: {
+          muskapi: {
+            displayName: snapshot.displayName,
+            apiKeyEnv: 'MUSKAPI_API_KEY',
+            api: snapshot.api,
+            baseURL: snapshot.baseURL,
+            models: snapshot.models,
+          },
         },
       },
+      revision: 0,
     }),
     mutatePiAiSettings: async () => { settingsWrites += 1 },
   }
@@ -347,26 +348,31 @@ test('It skips writes when Cherry and DSH are already synchronized', async () =>
   assert.equal(settingsWrites, 0, 'An unchanged provider route was rewritten')
 })
 
-test('It applies the compiled plugin against the DSH 0.1.2 settings service', async t => {
+test('It writes the pi-ai profile entry with its revision and preserves other route fields', async t => {
   const { apply, Config } = await import('../lib/index.js')
   const providerName = `Musk-${randomUUID()}`
   const modelId = `deepseek-${randomUUID()}`
   const databasePath = createFixture({ providerName, modelId })
   const snapshot = readCherryProvider(bridgeOptions(databasePath, providerName, modelId))
-  let persisted: Record<string, unknown> = {}
-  let settingsWrites = 0
-  class MemorySettings extends SettingsProvider {
-    writable = true
-    async load() { return {} }
-    async persist(_ns: string, section: Record<string, unknown>) {
-      persisted = section
-      settingsWrites += 1
-    }
+  const providers: Record<string, Record<string, unknown>> = {
+    other: { api: 'openai-responses' },
+    cherry: { timeoutMs: 12345 },
   }
-  const settings = new MemorySettings(new Context())
-  settings.register('llm-pi-ai', z.object({ providers: z.dict(z.any()).default({}) }), {
-    base: { providers: { other: { api: 'openai-responses' }, muskapi: { timeoutMs: 12345 } } },
-  })
+  let revision = 7
+  let settingsWrites = 0
+  const settings = {
+    describe: () => [{ ns: 'llm-pi-ai', value: { providers }, revision }],
+    async mutate(ns: string, ops: readonly SettingsPathOp[], expectedRevision: number) {
+      assert.equal(ns, 'llm-pi-ai', 'The wrong profile entry was selected')
+      assert.equal(expectedRevision, revision, 'The profile revision was not forwarded')
+      for (const op of ops) {
+        assert.deepEqual(op.path.slice(0, 2), ['providers', 'cherry'])
+        providers.cherry[op.path[2]] = op.value
+      }
+      revision += 1
+      settingsWrites += 1
+    },
+  }
   let storedCredential: string | undefined
   let credentialWrites = 0
   const warnings: unknown[][] = []
@@ -374,11 +380,11 @@ test('It applies the compiled plugin against the DSH 0.1.2 settings service', as
     settings,
     credentials: {
       resolve: async (ref: string) => {
-        assert.equal(ref, 'MUSKAPI_API_KEY')
+        assert.equal(ref, 'CHERRY_API_KEY')
         return storedCredential === undefined ? undefined : { value: storedCredential }
       },
       set: async (ref: string, value: string) => {
-        assert.equal(ref, 'MUSKAPI_API_KEY')
+        assert.equal(ref, 'CHERRY_API_KEY')
         storedCredential = value
         credentialWrites += 1
       },
@@ -386,28 +392,27 @@ test('It applies the compiled plugin against the DSH 0.1.2 settings service', as
     logger: { info() {}, debug() {}, warn: (...args: unknown[]) => warnings.push(args) },
     effect: (setup: () => () => void) => { t.after(setup()) },
   } as unknown as Context
-  const config = Config({ providerName, databasePath, modelIds: [modelId], routeId: 'muskapi', credentialRef: 'MUSKAPI_API_KEY' })
+  const config = Config({ providerName, databasePath, modelIds: [modelId], routeId: 'cherry', credentialRef: 'CHERRY_API_KEY' })
 
   await apply(ctx, config)
-  const resolved = settings.get('llm-pi-ai') as { providers: Record<string, Record<string, unknown>> }
-  assert.deepEqual(resolved.providers.muskapi, {
+  assert.deepEqual(providers.cherry, {
     timeoutMs: 12345,
     displayName: snapshot.displayName,
-    apiKeyEnv: 'MUSKAPI_API_KEY',
+    apiKeyEnv: 'CHERRY_API_KEY',
     api: snapshot.api,
     baseURL: snapshot.baseURL,
     models: snapshot.models,
   })
-  assert.deepEqual(resolved.providers.other, { api: 'openai-responses' })
+  assert.deepEqual(providers.other, { api: 'openai-responses' })
   assert.equal(storedCredential, snapshot.apiKey)
-  assert.equal(JSON.stringify(persisted).includes(snapshot.apiKey), false)
+  assert.equal(JSON.stringify(providers).includes(snapshot.apiKey), false)
   await apply(ctx, config)
   assert.equal(settingsWrites, 1, 'The resolved namespace should not be rewritten on the next sync')
   assert.equal(credentialWrites, 1)
   assert.deepEqual(warnings, [])
 })
 
-test('It retries settings after the llm-pi-ai namespace becomes available', async () => {
+test('It retries the Profile entry after the llm-pi-ai plugin becomes available', async () => {
   const providerName = `Musk-${randomUUID()}`
   const modelId = `deepseek-${randomUUID()}`
   const databasePath = createFixture({ providerName, modelId })
@@ -417,7 +422,7 @@ test('It retries settings after the llm-pi-ai namespace becomes available', asyn
   const services: BridgeServices = {
     resolveCredential: async () => storedCredential,
     setCredential: async (_ref, value) => { storedCredential = value },
-    getPiAiSettings: () => ready ? { providers: {} } : undefined,
+    getPiAiSettings: () => ready ? { value: { providers: {} }, revision: 0 } : undefined,
     mutatePiAiSettings: async () => { settingsWrites += 1 },
   }
   const options = bridgeOptions(databasePath, providerName, modelId)

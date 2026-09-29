@@ -9,7 +9,7 @@ The bridge reads Cherry's SQLite database read-only and periodically synchronize
 ## Requirements
 
 - Node.js 24 and npm.
-- DSH **0.1.2-rc.1**, with its credential/settings providers and `llm-pi-ai` namespace.
+- DSH **0.1.7-rc.2**, with its credential/settings providers and `llm-pi-ai` Profile entry.
 - Cherry Studio database tables `user_provider` and `user_model` matching the tested schema. Cherry's database is an internal interface; arbitrary versions are not guaranteed.
 - Windows paths are discovered automatically. On other systems provide `databasePath` and, if needed, `modelRegistryPath` explicitly.
 
@@ -35,8 +35,8 @@ syncIntervalMs: 5000
 ```
 
 ```sh
-npx --yes @deepseek-ai/dsh@0.1.2-rc.1 plugin --profile web add .
-npx --yes @deepseek-ai/dsh@0.1.2-rc.1 web
+npx --yes @deepseek-ai/dsh@0.1.7-rc.2 plugin --profile web add .
+npx --yes @deepseek-ai/dsh@0.1.7-rc.2 web
 ```
 
 Restart an already running host. Keep the clone if installed as a local link.
@@ -47,18 +47,18 @@ Default optional registry: `%ProgramFiles%/Cherry Studio/resources/provider-regi
 
 ## Data ownership and recovery
 
-This intentionally copies the selected key into DSH's credential store, not ordinary settings. It does not send the database to any service. DSH subsequently uses the configured endpoint for model calls. Synchronization runs every five seconds, skips unchanged values and retries temporary lock/namespace failures.
+This intentionally copies the selected key into DSH's credential store, not Profile configuration. It does not send the database to any service. DSH subsequently uses the configured endpoint for model calls. Synchronization runs every five seconds, skips unchanged values and retries temporary lock/Profile-entry failures.
 
 To stop synchronization, remove the plugin and restart DSH:
 
 ```sh
-npx --yes @deepseek-ai/dsh@0.1.2-rc.1 plugin --profile web remove dsh-cherry-provider-bridge
+npx --yes @deepseek-ai/dsh@0.1.7-rc.2 plugin --profile web remove dsh-cherry-provider-bridge
 ```
 
 The synchronized route and credential remain. Remove them through DSH if desired; uninstalling does not revoke a provider key.
 
 ## Verification
 
-`npm run check` runs TypeScript checks, builds the distributable, and runs 12 tests using temporary SQLite fixtures plus the actual DSH settings implementation. No real key or Cherry database is included. Paid-provider requests and every Cherry release are not certified.
+`npm run check` runs TypeScript checks, builds the distributable, and runs 12 tests using temporary SQLite fixtures plus the DSH Profile settings boundary. No real key or Cherry database is included. Paid-provider requests and every Cherry release are not certified.
 
 Independent community plugin, not affiliated with DeepSeek AI or Cherry Studio. MIT; [LICENSE](LICENSE).

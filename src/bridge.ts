@@ -48,8 +48,8 @@ export type SettingsPathOp = {
 export interface BridgeServices {
   resolveCredential(ref: string): Promise<string | undefined>
   setCredential(ref: string, value: string): Promise<void>
-  getPiAiSettings(): unknown | undefined
-  mutatePiAiSettings(ops: readonly SettingsPathOp[]): Promise<void>
+  getPiAiSettings(): { value: unknown; revision: number } | undefined
+  mutatePiAiSettings(ops: readonly SettingsPathOp[], expectedRevision: number): Promise<void>
 }
 
 /** Observable outcome of one synchronization attempt. */
@@ -382,8 +382,8 @@ export async function synchronizeCherryProvider(
   if (settings === undefined) {
     return { credentialChanged, settingsChanged: false, settingsPending: true }
   }
-  const operations = settingsOperations(snapshot, options, settings)
-  if (operations.length > 0) await services.mutatePiAiSettings(operations)
+  const operations = settingsOperations(snapshot, options, settings.value)
+  if (operations.length > 0) await services.mutatePiAiSettings(operations, settings.revision)
   return {
     credentialChanged,
     settingsChanged: operations.length > 0,
